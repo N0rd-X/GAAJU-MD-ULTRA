@@ -31,10 +31,10 @@ module.exports = {
 ┃✦ *${botName} Pairing Servers*
 ┃
 ┃➊ *SERVER 1*
-┃   🔗 https://gaaju-ultra-pair-ljtv.onrender.com
+┃   https://gaaju-ultra-pair-ljtv.onrender.com
 ┃
 ┃➋ *SERVER 2*
-┃   🔗 https://gaaju-ultra-pair04.onrender.com
+┃   https://gaaju-ultra-pair04.onrender.com
 ┃
 ┃✦ *How to pair:*
 ┃  1. Open either server
@@ -52,10 +52,15 @@ module.exports = {
 
 > ⚡ Powered by Chris Gaaju 🔥
 `;
-                    }
-                }
+
+        await sock.sendMessage(
+            chatId,
+            {
+                text: text
             },
-            { quoted: msg }
+            {
+                quoted: msg
+            }
         );
     }
 };
