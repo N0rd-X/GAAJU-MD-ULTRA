@@ -52,19 +52,6 @@ module.exports = {
 
 > ⚡ Powered by Chris Gaaju 🔥
 `;
-
-        await sock.sendMessage(
-            chatId,
-            {
-                text,
-                contextInfo: {
-                    externalAdReply: {
-                        title: `${botName} Pairing`,
-                        body: 'Choose a pairing server below',
-                        sourceUrl: 'https://gaaju-ultra-pair-ljtv.onrender.com',
-                        mediaType: 1,
-                        renderLargerThumbnail: false,
-                        showAdAttribution: false
                     }
                 }
             },
