@@ -41,8 +41,10 @@ module.exports = {
             );
         }
 
-        // Check permission
-        let isPrivileged = ctx?.isOwnerUser || ctx?.isSudoUser;
+        // Check command user's permission
+        let isPrivileged =
+            ctx?.isOwnerUser ||
+            ctx?.isSudoUser;
 
         if (!isPrivileged) {
             try {
@@ -50,15 +52,13 @@ module.exports = {
 
                 const rawJid =
                     msg.key.participant ||
-                    msg.key.remoteJid ||
                     '';
 
-                const bareJid = rawJid.replace(/:[\d]+@/, '@');
+                const bareJid =
+                    rawJid.replace(/:[\d]+@/, '@');
+
                 const numPart =
                     rawJid.split('@')[0].split(':')[0];
-
-                const rawDomain =
-                    rawJid.split('@')[1] || '';
 
                 isPrivileged = meta.participants.some(p => {
                     if (
@@ -69,8 +69,6 @@ module.exports = {
                     }
 
                     const pId = p.id || '';
-                    const pDomain =
-                        pId.split('@')[1] || '';
 
                     const pBare =
                         pId.replace(/:[\d]+@/, '@');
@@ -78,14 +76,16 @@ module.exports = {
                     const pNum =
                         pId.split('@')[0].split(':')[0];
 
+                    const pPhone =
+                        p.phoneNumber || '';
+
                     return (
                         pId === rawJid ||
                         pBare === bareJid ||
-                        (
-                            pNum === numPart &&
-                            numPart.length >= 5 &&
-                            pDomain === rawDomain
-                        )
+                        pNum === numPart ||
+                        pPhone === rawJid ||
+                        pPhone === bareJid ||
+                        pPhone.split('@')[0] === numPart
                     );
                 });
             } catch {}
@@ -143,14 +143,25 @@ module.exports = {
 
             const match = text.match(regex);
 
-            if (!match || !match[0] || !/[dhms]/.test(text)) {
+            if (
+                !match ||
+                !match[0] ||
+                !/[dhms]/.test(text)
+            ) {
                 return null;
             }
 
-            const days = Number(match[1] || 0);
-            const hours = Number(match[2] || 0);
-            const minutes = Number(match[3] || 0);
-            const seconds = Number(match[4] || 0);
+            const days =
+                Number(match[1] || 0);
+
+            const hours =
+                Number(match[2] || 0);
+
+            const minutes =
+                Number(match[3] || 0);
+
+            const seconds =
+                Number(match[4] || 0);
 
             const total =
                 (days * 24 * 60 * 60) +
@@ -165,7 +176,8 @@ module.exports = {
             return total * 1000;
         }
 
-        const duration = parseDuration(input);
+        const duration =
+            parseDuration(input);
 
         if (!duration) {
             return sock.sendMessage(
@@ -184,35 +196,89 @@ module.exports = {
             );
         }
 
-        // Make sure the bot is admin
+        // Make sure the BOT is an admin
         let meta;
 
         try {
             meta = await sock.groupMetadata(chatId);
 
-            const botJid =
-                sock.user?.id?.replace(/:[\d]+@/, '@');
+            /*
+             * Modern WhatsApp can use LIDs.
+             * Therefore we check:
+             * - sock.user.id
+             * - sock.user.lid
+             * - participant.id
+             * - participant.phoneNumber
+             */
+
+            const botIds = new Set();
+
+            if (sock.user?.id) {
+                botIds.add(sock.user.id);
+                botIds.add(
+                    sock.user.id.replace(/:[\d]+@/, '@')
+                );
+            }
+
+            if (sock.user?.lid) {
+                botIds.add(sock.user.lid);
+                botIds.add(
+                    sock.user.lid.replace(/:[\d]+@/, '@')
+                );
+            }
 
             const botNumber =
-                botJid?.split('@')[0];
+                sock.user?.id
+                    ?.split('@')[0]
+                    ?.split(':')[0];
+
+            const botLid =
+                sock.user?.lid
+                    ?.split('@')[0]
+                    ?.split(':')[0];
 
             const botParticipant =
                 meta.participants.find(p => {
+                    if (
+                        p.admin !== 'admin' &&
+                        p.admin !== 'superadmin'
+                    ) {
+                        return false;
+                    }
+
+                    const pId = p.id || '';
+
+                    const pBare =
+                        pId.replace(/:[\d]+@/, '@');
+
                     const pNumber =
-                        (p.id || '')
+                        pId
                             .split('@')[0]
                             .split(':')[0];
 
-                    return pNumber === botNumber;
+                    const pPhone =
+                        p.phoneNumber || '';
+
+                    const pPhoneNumber =
+                        pPhone
+                            .split('@')[0]
+                            .split(':')[0];
+
+                    return (
+                        botIds.has(pId) ||
+                        botIds.has(pBare) ||
+                        (botNumber &&
+                            pNumber === botNumber) ||
+                        (botNumber &&
+                            pPhoneNumber === botNumber) ||
+                        (botLid &&
+                            pNumber === botLid) ||
+                        (botLid &&
+                            pPhoneNumber === botLid)
+                    );
                 });
 
-            if (
-                !botParticipant ||
-                (
-                    botParticipant.admin !== 'admin' &&
-                    botParticipant.admin !== 'superadmin'
-                )
-            ) {
+            if (!botParticipant) {
                 return sock.sendMessage(
                     chatId,
                     {
@@ -227,7 +293,13 @@ module.exports = {
                     { quoted: msg }
                 );
             }
+
         } catch (error) {
+            console.error(
+                '[CLOSETIME ADMIN CHECK]',
+                error
+            );
+
             return sock.sendMessage(
                 chatId,
                 {
@@ -243,39 +315,58 @@ module.exports = {
             );
         }
 
-        // Prevent overlapping timers for the same group
+        // Prevent overlapping timers
         globalThis._gaajuCloseTimers =
             globalThis._gaajuCloseTimers || {};
 
-        if (globalThis._gaajuCloseTimers[chatId]) {
+        if (
+            globalThis._gaajuCloseTimers[chatId]
+        ) {
             clearTimeout(
                 globalThis._gaajuCloseTimers[chatId]
             );
         }
 
-        // Convert milliseconds to readable time
+        // Format duration
         function formatDuration(ms) {
             const totalSeconds =
                 Math.floor(ms / 1000);
 
             const days =
-                Math.floor(totalSeconds / 86400);
+                Math.floor(
+                    totalSeconds / 86400
+                );
 
             const hours =
-                Math.floor((totalSeconds % 86400) / 3600);
+                Math.floor(
+                    (totalSeconds % 86400) / 3600
+                );
 
             const minutes =
-                Math.floor((totalSeconds % 3600) / 60);
+                Math.floor(
+                    (totalSeconds % 3600) / 60
+                );
 
             const seconds =
                 totalSeconds % 60;
 
             const parts = [];
 
-            if (days) parts.push(`${days}d`);
-            if (hours) parts.push(`${hours}h`);
-            if (minutes) parts.push(`${minutes}m`);
-            if (seconds) parts.push(`${seconds}s`);
+            if (days) {
+                parts.push(`${days}d`);
+            }
+
+            if (hours) {
+                parts.push(`${hours}h`);
+            }
+
+            if (minutes) {
+                parts.push(`${minutes}m`);
+            }
+
+            if (seconds) {
+                parts.push(`${seconds}s`);
+            }
 
             return parts.join(' ');
         }
@@ -319,11 +410,12 @@ module.exports = {
 ┃✦ *Status:* 🔒 Group closed
 ┃✦ *Effect:* Only admins can send messages
 ┃
-┗━━❐ *${name}* ❐
+┗━━❐ *${name}* ❐━━
 
 > ⚡ Powered by Chris Gaaju 🔥`
                         }
                     );
+
                 } catch (error) {
                     console.error(
                         '[CLOSETIME ERROR]',
@@ -331,7 +423,9 @@ module.exports = {
                     );
                 }
 
-                delete globalThis._gaajuCloseTimers[chatId];
+                delete globalThis._gaajuCloseTimers[
+                    chatId
+                ];
 
             }, duration);
     }
